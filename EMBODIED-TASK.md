@@ -18,6 +18,35 @@ python -m pytest tests/ -v
 
 ---
 
+## 补丁〇 · 创建 CI 文件（网页操作，3 分钟）
+
+仓库里还没有 CI 配置文件（GitHub 限制：workflow 文件必须由你自己在网页上创建）。
+这是验收表「基础 CI」一项的主体，也是你的仓库开始自动检查的第一步。
+
+**操作**：打开你的 fork 页面 → 点 **Add file → Create new file** →
+文件名输入（注意路径）`.github/workflows/ci.yml` → 内容粘贴下面全部 → 点 **Commit changes**：
+
+```yaml
+name: ci
+on: [push, pull_request]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests/ -v
+```
+
+**验证**：仓库的 **Actions** 标签页出现一次运行，几分钟后变绿。
+（此时 `test_guard.py` 仍是 skip——补丁一/二完成并 push 后，它会在下一次 push 时一起跑。）
+
+---
+
 ## 补丁一 · 前往途中锁定手动控制（约 5 行）
 
 **问题**：机器人正在自动前往目标点时，你仍然可以手动移动它——它会先被线程
