@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>巡逻机器人 · 基础版</title>
+<style>
+  body { background: #f6f7f8; color: #171b1f; font-family: "Segoe UI", "PingFang SC", sans-serif;
+         max-width: 760px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 22px; margin: 8px 0; }
+  .sub { color: #6b747e; font-size: 13px; margin-bottom: 14px; }
+  #board { display: block; border: 2px solid #3b4650; background: #fff; cursor: pointer; }
+  .bar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+  button { font-size: 15px; padding: 7px 16px; border: 1px solid #3b4650; background: #fff;
+           cursor: pointer; border-radius: 4px; }
+  button:active { background: #e5e8eb; }
+  .warn-btn { border-color: #c2410c; color: #c2410c; }
+  #msg { min-height: 22px; font-size: 14px; color: #b34a0a; }
+  #state { font-family: Consolas, monospace; font-size: 13px; color: #4b545c; }
+  .tip { font-size: 12px; color: #6b747e; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h1>巡逻机器人 · 基础版</h1>
+  <div class="sub">方向键 / WASD 手动移动 · 点击格子前往 · 点击墙后会看到异常处理提示</div>
+
+  <canvas id="board" width="432" height="324"></canvas>
+
+  <div class="bar">
+    <button data-act="forward">前进</button>
+    <button data-act="back">后退</button>
+    <button data-act="turnL">左转</button>
+    <button data-act="turnR">右转</button>
+    <button id="stopBtn" class="warn-btn">取消前往</button>
+    <button id="resetBtn">重置</button>
+  </div>
+
+  <div id="msg"></div>
+  <div id="state">loading…</div>
+  <div class="tip">前往途中手动移动会被锁定——这是异常处理守卫（具身智能方向任务）。</div>
+
+<script>
+const COLS = 12, ROWS = 9, CELL = 36;
+const cvs = document.getElementById("board"), ctx = cvs.getContext("2d");
+let walls = [], robot = { x: 1, y: 1, facing: "E", mode: "free", note: "" },
+    go = { active: false, step: 0, total: 0 };
+
+function draw() {
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+  ctx.strokeStyle = "#c9d1d6";
+  for (let x = 0; x < COLS; x++) for (let y = 0; y < ROWS; y++)
+    ctx.strokeRect(x * CELL, y * CELL, CELL, CELL);
+  ctx.fillStyle = "#5b6b7a";
+  for (const [wx, wy] of walls) ctx.fillRect(wx * CELL + 2, wy * CELL + 2, CELL - 4, CELL - 4);
+  const cx = robot.x * CELL + CELL / 2, cy = robot.y * CELL + CELL / 2;
+  ctx.fillStyle = robot.mode === "blocked" ? "#c2410c" : "#e8830c";
+  ctx.beginPath(); ctx.arc(cx, cy, 11, 0, Math.PI * 2); ctx.fill();
+  const d = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] }[robot.facing];
+  ctx.strokeStyle = "#171b1f"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(cx + d[0] * 5, cy + d[1] * 5);
+  ctx.lineTo(cx + d[0] * 14, cy + d[1] * 14); ctx.stroke();
+}
+
+async function api(path, body) {
+  const opt = body ? { method: "POST", headers: { "Content-Type": "application/json" },
+                       body: JSON.stringify(body) } : {};
+  const r = await fetch(path, opt);
+  const j = await r.json();
+  if (!r.ok && j.message) showMsg(j.message);
+  return j;
+}
+
+function showMsg(t) { document.getElementById("msg").textContent = t || ""; }
+
+async function refresh() {
+  const s = await api("/api/state");
+  robot = s.robot; go = s.go; draw();
+  document.getElementById("state").textContent =
+    `位置 (${robot.x}, ${robot.y}) · 朝向 ${robot.facing} · 模式 ${robot.mode}` +
+    (go.active ? ` · 前往中 ${go.step}/${go.total} → (${go.target})` : "");
+  if (!robot.note) showMsg("");
+}
+
+document.querySelectorAll("button[data-act]").forEach(b =>
+  b.onclick = async () => { await api("/api/robot/move", { action: b.dataset.act }); refresh(); });
+
+cvs.onclick = async e => {
+  const rect = cvs.getBoundingClientRect();
+  const tx = Math.floor((e.clientX - rect.left) / CELL),
+        ty = Math.floor((e.clientY - rect.top) / CELL);
+  await api("/api/go", { target: [tx, ty] }); refresh();
+};
+
+document.getElementById("stopBtn").onclick = async () => { await api("/api/stop"); refresh(); };
+document.getElementById("resetBtn").onclick = async () => { await api("/api/reset"); refresh(); };
+
+document.addEventListener("keydown", async e => {
+  const map = { ArrowUp: "forward", ArrowDown: "back", ArrowLeft: "turnL", ArrowRight: "turnR",
+                w: "forward", s: "back", a: "turnL", d: "turnR" };
+  if (map[e.key]) { e.preventDefault(); await api("/api/robot/move", { action: map[e.key] }); refresh(); }
+});
+
+(async () => {
+  walls = (await api("/api/map")).walls.map(w => [w[0], w[1]]);
+  await refresh();
+  setInterval(refresh, 500);
+})();
+</script>
+</body>
+</html>
